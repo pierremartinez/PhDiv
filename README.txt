@@ -15,7 +15,7 @@ There are two datasets, with dedicated scripts for analysis in this study:
 		  below details how to download them and where to place
 		  them. The AUCell activity scores for all 50 MSigDB
 		  hallmark activities in each of the 8 datasets are stored
-		  in the "preprocessed" folder as R data files.
+		  in the "preprocessed" folder as compressed R data files.
 
 
 
