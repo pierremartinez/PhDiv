@@ -8,9 +8,9 @@ library(stringr) ; library(pROC) ; library(gdata)
 ############################################################################################################
 
 
-################# Importation des donnÃ©es
+################# Importation des données
 
-genedat <- read.table("emt_dnarep_glyco_induction_sc.csv", header=T, fill=T, stringsAsFactors=F, sep="\t")
+genedat <- read.table("emt_dnarep_glyco_induction_sc.csv", header=T, fill=T, stringsAsFactors=F, sep=",")
 c1dat <- read.xls("Biomark_output_table.xls", stringsAsFactors=F, header=F, sheet=3)
 
 colnames(c1dat) <- c("Well", "Cell", "Type", "rConc", "Gene", "Type", "Value", "Quality", "Call", "Threshold", "Tm_In", "Tm_Out", "Peak.Ratio")
@@ -28,7 +28,7 @@ c1dat$Cell <- gsub("^1_4", "EMT", c1dat$Cell)
 cells <- unique(c1dat$Cell)
 cells <- c(cells[grep("EMT", cells)], cells[grep("DNA_repair", cells)], cells[grep("Glyco", cells)], cells[grep("Control", cells)], "C-", "C+")
 
-### 46 gÃ¨nes (+2 spikes) et 48 cellules
+### 46 gènes (+2 spikes) et 48 cellules
 
 
 ################# Filtre et matrice Ct
@@ -50,8 +50,8 @@ ctMatThresh <- ctMat
 ctMatThresh[which(genefail > genethresh),] <- 999
 ctMatThresh[,which(cellfail > cellthresh)] <- 999
 
-##ctMat : matrice 48x48 , en ligne les gÃ¨nes + 2 spikes et en colonne les cellules
-##ctMatThresh : matrice 48x48 , en ligne les gÃ¨nes + 2 spikes et en colonne les cellules, plus filtre
+##ctMat : matrice 48x48 , en ligne les gènes + 2 spikes et en colonne les cellules
+##ctMatThresh : matrice 48x48 , en ligne les gènes + 2 spikes et en colonne les cellules, plus filtre
 
 
 
@@ -69,21 +69,21 @@ ctMatThresh_NA=remplir_NA(ctMatThresh)
 
 
 data.Ct_tresh=ctMatThresh_NA[-c(which(genefail > genethresh)),-c(which(cellfail > genethresh))]
-### Matrice Ct sans les gÃ¨nes et cellules qui ont fail
+### Matrice Ct sans les gènes et cellules qui ont fail
 ### Matrice 36x37
 
 
 
 ############################################################################################################
-############################       Etape de prÃ©-normalisation       ####################################
+############################       Etape de pré-normalisation       ####################################
 ############################################################################################################
 
 
-### RÃ©cupÃ©ration des spikes
+### Récupération des spikes
 spike1.thresh=data.Ct_tresh["spike1",]
 spike4.thresh=data.Ct_tresh["spike4",]
 
-### Test de la normalitÃ©
+### Test de la normalité
 shapiro.test(spike1.thresh) ; shapiro.test(spike4.thresh)
 
 
@@ -101,7 +101,7 @@ spike1.thresh.r=remove.cell.spike(spike1.thresh)
 spike4.thresh.r=remove.cell.spike(spike4.thresh)
 
 
-### Test de Shapiro pour vÃ©rifier la normalitÃ©
+### Test de Shapiro pour vérifier la normalité
 shapiro.test(spike1.thresh.r) ; shapiro.test(spike4.thresh.r)
 
 which(is.na(spike1.thresh.r)) ; which(is.na(spike4.thresh.r))
@@ -112,7 +112,7 @@ colnames(spike.thresh.r)=c("spike1","spike4")
 cell.remove=unique(c(which(is.na(spike1.thresh.r)),which(is.na(spike4.thresh.r))))
 
 data.Ct_tresh.r=data.Ct_tresh[,-c(cell.remove)]
-###DonnÃ©es 36x36
+###Données 36x36
 
 
 ###  Moyenne et ecart type
@@ -126,8 +126,8 @@ spike.tab.thresh.r=matrix(c(mean(spike1.thresh.r,na.rm=T),sd(spike1.thresh.r,na.
 colnames(spike.tab.thresh.r)=c("Moyenne","Ecart-type")
 rownames(spike.tab.thresh.r)=c("spike1","spike4")
 
-###  Liste avec les tableaux avant/aprÃ¨s
-spike.mean.sd.thresh=list("Avant"=spike.tab.thresh,"AprÃ¨s"=spike.tab.thresh.r)
+###  Liste avec les tableaux avant/après
+spike.mean.sd.thresh=list("Avant"=spike.tab.thresh,"Après"=spike.tab.thresh.r)
 
 
 
@@ -160,11 +160,11 @@ normalisation=function(m,adj1,adj2){
 }
 
 
-### DonnÃ©es normalisÃ©es
+### Données normalisées
 data.Ct_tresh.r.norm=normalisation(data.Ct_tresh.r,adj.spike1.thresh,adj.spike4.thresh)
 
 
-### Spikes normalisÃ©s
+### Spikes normalisés
 spike1.thresh.r.norm=data.Ct_tresh.r.norm["spike1",]
 spike4.thresh.r.norm=data.Ct_tresh.r.norm["spike4",]
 
@@ -175,12 +175,12 @@ colnames(spike.tab.thresh.r.norm)=c("Moyenne","Ecart-type")
 rownames(spike.tab.thresh.r.norm)=c("spike1","spike4")
 
 
-### Moyenne et Ã©cart-type aprÃ¨s correction
+### Moyenne et écart-type après correction
 spike.tab.thresh.r.norm
 
 
 ############################################################################################################
-###################################        InfÃ©rence        #######################################
+###################################        Inférence        #######################################
 ############################################################################################################
 
 ##### Transformation Cq en RNAm
@@ -197,12 +197,28 @@ matrice_RNA=function(m1){
   return(m)
 }
 
-
 ## Matrice avec les valeurs de transcrits
 data.thresh=matrice_RNA(data.Ct_tresh.r.norm)
+old.thresh=data.thresh
+sum.thresh=apply(data.thresh[setdiff(rownames(data.thresh), c("spike1", "spike4", "C+", "C-")),], 2, sum)
 
+## Housekeeping genes smoothing. Taking the maximum of each gene as 100%, and 0 as 0%.
+## Calculating the average % per cell. Dividing N transcripts by it, to smooth overall transcript abundance per cell (increasing it when low).
+normax.hk <- data.hk <- data.thresh[intersect(rownames(data.thresh), genedat$Genes[genedat$GeneSet=="Housekeeping"]),]
+sum.housek=apply(data.hk, 2, sum)
+max.hk <- apply(data.hk, 1, max)
+for (i in 1:nrow(normax.hk)) {
+  normax.hk[i,] = normax.hk[i,] / max.hk[i]
+}
+normeanmax.hk <- apply(normax.hk, 2, mean)
 
-##### Gene Ã  supprimer
+for (i in 1:ncol(data.thresh)) {
+  ##data.thresh[,i] <- data.thresh[,i] / sum.housek[i]
+  data.thresh[,i] <- data.thresh[,i] / normeanmax.hk[i]
+}
+data.thresh <- data.thresh[setdiff(rownames(data.thresh), c("spike1", "spike4", "C+", "C-")),]
+
+##### Gene à supprimer
 
 gene.EMT=genedat$Genes[grep("EMT",genedat$GeneSet)]
 gene.DNA_repair=genedat$Genes[grep("DNA_repair",genedat$GeneSet)]
@@ -219,12 +235,12 @@ gene.EMT.thresh=gene.EMT[-c(3,4,6,10,11,13)]
 gene.DNA_repair.thresh=gene.DNA_repair[-c(1,2,7,8,9,10)]
 
 
-##### DonnÃ©es par activitÃ©s
+##### Données par activités
 data.glyco.thresh=data.thresh[gene.glyco,]
 data.EMT.thresh=data.thresh[gene.EMT.thresh,]
 data.DNA_repair.thresh=data.thresh[gene.DNA_repair.thresh,]
 
-##Matrice de taille i x 36, oÃ¹ i est le nombre de gÃ¨nes par activitÃ©
+##Matrice de taille i x 36, oÃ¹ i est le nombre de gènes par activité
 
 #####################################################################
 ####            Pierre addition: heatmap per activity            ####
@@ -265,7 +281,7 @@ dev.off()
 
 ###############################   Distribution Beta-Poisson   #######################################
 
-### ModÃ©lisation Beta-Poisson sur une ligne
+### Modélisation Beta-Poisson sur une ligne
 estim_BP=function(x){
   t=estimateBP(x[which(!is.na(x))], para.num=4, tbreak.num=20)
   return(t)
@@ -275,7 +291,7 @@ testFunction <- function (x) {
   return(tryCatch(estim_BP(x), error=function(e) NA))
 }
 
-### ModÃ©lisation Beta-Poisson sur une matrice
+### Modélisation Beta-Poisson sur une matrice
 BP_function=function(m,cond){
   ind=grep(cond,colnames(m))
   l=list()
@@ -291,7 +307,7 @@ BP_EMT.thresh=BP_function(data.EMT.thresh,"EMT")
 BP_DNA_repair.thresh=BP_function(data.DNA_repair.thresh,"DNA_repair")
 
 
-### RÃ©cupÃ©ration des coeffs
+### Récupération des coeffs
 coeff.BP=function(l,cond){
   m1=matrix(ncol=4,nrow=length(l))
   m2=matrix(ncol=4,nrow=length(l))
@@ -324,24 +340,24 @@ sd.spike.thresh=mean(spike.tab.thresh.r.norm[,2])
 ## Intervalle pour une valeur de Ct
 interval_Ct.2=function(valCt,sd){
   IC=cbind(valCt,valCt-sd,valCt+sd)
-  colnames(IC)=c("Valeur observÃ©e","Borne inf","Borne sup")
+  colnames(IC)=c("Valeur observée","Borne inf","Borne sup")
   return(IC)
 }
 
-## Sans la premiÃ¨re colonne
+## Sans la première colonne
 interval_Ct=function(valCt,sd){
   IC=cbind(valCt-sd,valCt+sd)
   colnames(IC)=c("Borne inf","Borne sup")
   return(IC)
 }
 
-## Ct transformÃ©e en nombre de transcrit
+## Ct transformée en nombre de transcrit
 Ct_RNA=function(val){
   RNAm=48*45*2^(30-18-val)
   return(RNAm)
 }
 
-## Nombre de transcrit transformÃ© en Ct
+## Nombre de transcrit transformé en Ct
 RNA_Ct=function(x){
   Ct=(-log(x/(48*45))/log(2)) + 30 - 18
   return(Ct)
@@ -422,7 +438,7 @@ IC_DNA_repair.thresh.2=correction.IC(IC_DNA_repair.thresh)
 
 
 
-###Creation d'une matrice enlevant chaque valeur observÃ©e
+###Creation d'une matrice enlevant chaque valeur observée
 remove_val_obs=function(m){
   mat=matrix(ncol=length(m),nrow=length(m))
   for(i in 1:nrow(mat)){
@@ -464,7 +480,7 @@ sansobs_EMT.thresh=m_sans_obs(data.EMT.thresh,"EMT")
 sansobs_DNA_repair.thresh=m_sans_obs(data.DNA_repair.thresh,"DNA_repair")
 
 
-### Beta-Poisson sans la valeur observÃ©e
+### Beta-Poisson sans la valeur observée
 recup.coeff=function(l){
   m=NULL
   if(class(l)=="list"){
@@ -505,7 +521,7 @@ coeff_sansobs_EMT.thresh=BP_function_sansobs(sansobs_EMT.thresh)
 coeff_sansobs_DNA_repair.thresh=BP_function_sansobs(sansobs_DNA_repair.thresh)
 
 
-### ProbabilitÃ©
+### Probabilité
 proba_rBP=function(IC,coeff,coeff_sansobs){
   proba=list()
   cond=names(coeff)[1]
@@ -514,28 +530,28 @@ proba_rBP=function(IC,coeff,coeff_sansobs){
     if(is.na(coeff[[1]][i,1])==FALSE){
       proba1=matrix(nrow=nrow(IC[[i]][[1]]),ncol=5)
       proba2=matrix(nrow=nrow(IC[[i]][[2]]),ncol=5)
-      colnames(proba1)=colnames(proba2)=c("RNA","Borne inf", "Borne sup",paste("ProbabilitÃ©",cond,sep=" "),
-                                          paste("ProbabilitÃ©",cond2,sep=" "))
+      colnames(proba1)=colnames(proba2)=c("RNA","Borne inf", "Borne sup",paste("Probabilité",cond,sep=" "),
+                                          paste("Probabilité",cond2,sep=" "))
       rownames(proba1)=rownames(IC[[i]][[1]])
       rownames(proba2)=rownames(IC[[i]][[2]])
       
       proba1[,c(1,2,3)]=IC[[i]][[1]][,c(1,2,3)]
       proba2[,c(1,2,3)]=IC[[i]][[2]][,c(1,2,3)]
       
-      rBP_cond=rBP(10000,coeff[[1]][i,])
-      rBP_cond2=rBP(10000,coeff[[2]][i,])
+      rBP_cond=rBP(50000,coeff[[1]][i,])
+      rBP_cond2=rBP(50000,coeff[[2]][i,])
       
       for(j in 1:nrow(proba1)){
         bons=which(rBP_cond2 >= proba1[j,2] & rBP_cond2 <=proba1[j,3])
-        x1=rBP(10000,coeff_sansobs[[1]][[i]][j,])
+        x1=rBP(50000,coeff_sansobs[[1]][[i]][j,])
         bons1=which(x1 >= proba1[j,2] & x1 <=proba1[j,3])
         proba1[j,c(4,5)]=c(length(bons1)/length(x1),length(bons)/length(rBP_cond2))
       }
       
       for(k in 1:nrow(proba2)){
         bons=which(rBP_cond >= proba2[k,2] & rBP_cond <=proba2[k,3])
-        x2=rBP(10000,coeff_sansobs[[2]][[i]][k,])
-        bons2=which(x2 >= proba2[k,2] & x1 <=proba2[k,3])
+        x2=rBP(50000,coeff_sansobs[[2]][[i]][k,])
+        bons2=which(x2 >= proba2[k,2] & x2 <=proba2[k,3])
         proba2[k,c(4,5)]=c(length(bons)/length(rBP_cond),length(bons2)/length(x2))
       }
       
@@ -549,7 +565,6 @@ proba_rBP=function(IC,coeff,coeff_sansobs){
 proba_glyco.thresh=proba_rBP(IC_glyco.thresh.2,coeff_BP_glyco.thresh,coeff_sansobs_glyco.thresh)
 proba_EMT.thresh=proba_rBP(IC_EMT.thresh.2,coeff_BP_EMT.thresh,coeff_sansobs_EMT.thresh)
 proba_DNA_repair.thresh=proba_rBP(IC_DNA_repair.thresh.2,coeff_BP_DNA_repair.thresh,coeff_sansobs_DNA_repair.thresh)
-
 
 ### Vraisemblance
 likelihood=function(proba){
@@ -577,6 +592,94 @@ likelihood_glyco.thresh=likelihood(proba_glyco.thresh)
 likelihood_EMT.thresh=likelihood(proba_EMT.thresh)
 likelihood_DNA_repair.thresh=likelihood(proba_DNA_repair.thresh)
 
+polycurve <- function(x, y, base.y = min(y), ...) {
+  polygon(x = c(min(x), x, max(x)), y = c(base.y, y, base.y), ...)
+}
+
+graphique_IC=function(l,coeff){
+  cond1=names(coeff)[1]
+  cond2=names(coeff)[2]
+  
+  for(i in 1:length(l)){
+    pdf(paste("IC_",names(l)[i],".pdf",sep=""))
+    d1=density(rBP(10000,coeff[[1]][i,]))
+    d2=density(rBP(10000,coeff[[2]][i,]))
+    
+    xobs=l[[i]][order(l[[i]][,1]),]
+    
+    for(j in 1:nrow(xobs)){
+      plot(d1,lwd=2,main=paste(names(l)[i],", x =",round(xobs[j,1],digits = 2),sep=" "),
+           xlim=c(0,max(c(max(d1$x),max(d2$x)))),ylim=c(0,max(c(max(d1$y),max(d2$y)))),
+           xlab="Observed number of transcripts")
+      lines(d2,lwd=2,col=2)
+      
+      bons <- which(d1$x >= xobs[j,2] & d1$x <=xobs[j,3])
+      x.bons <- d1$x[bons]
+      y.bons <- d1$y[bons]
+      polycurve(x.bons, y.bons, base.y = 0, border = "darkblue",
+                col=adjustcolor("lightblue", alpha.f = 0.5) )
+      y.lim=tail(d1$y[which(d1$x <= xobs[j,1])], n=1)
+      if (length(y.lim) == 0)
+        y.lim=0
+      segments(xobs[j,1], 0, xobs[j,1], y.lim, col = "darkblue", lwd = 2, lend = 'butt')
+      
+      bons1 <- which(d2$x >= xobs[j,2] & d2$x <= xobs[j,3])
+      x.bons1 <- d2$x[bons1]
+      y.bons1 <- d2$y[bons1]
+      polycurve(x.bons1, y.bons1, base.y = 0, border = "deeppink", 
+                col=adjustcolor("pink", alpha.f = 0.5) )
+      y.lim1=tail(d2$y[which(d2$x <= xobs[j,1])], n=1)
+      if (length(y.lim1) == 0)
+        y.lim1=0
+      segments(xobs[j,1], 0, xobs[j,1], y.lim1, col = "deeppink", lwd = 2, lend = 'butt')
+      legend("topright",inset=0.1,legend=c(cond1,cond2),col=c(1,2),lwd=2,box.lty=0,cex=0.8,horiz = T)
+      legend("right",inset=0.05,legend=c(round(xobs[j,4],digits = 4),round(xobs[j,5],digits = 4)),
+             fill=c("lightblue","pink"),lty=0,box.lty=0,cex=0.9,
+             title=expression(bold("Probability")),title.adj = 0.5)
+    }
+    dev.off()
+  }
+}
+
+graphique_IC(likelihood_glyco.thresh,coeff_BP_glyco.thresh)
+graphique_IC(likelihood_EMT.thresh,coeff_BP_EMT.thresh)
+graphique_IC(likelihood_DNA_repair.thresh,coeff_BP_DNA_repair.thresh)
+
+hist_BP=function(l,coeff,cond){
+  pdf(paste("Hist_likelihood_",cond,".pdf",sep=""))
+  for(i in 1:length(l)){
+    ind=grep(cond,rownames(l[[i]]))
+    d1=density(rBP(10000,coeff[[1]][i,]))
+    d2=density(rBP(10000,coeff[[2]][i,]))
+    
+    h1=hist(l[[i]][ind,1],probability = T, breaks=10,main=names(l)[i],xlim=c(0, max(l[[i]][,1])),plot=F)
+    h2=hist(l[[i]][-ind,1],probability = T, breaks=10,main=names(l)[i],xlim=c(0, max(l[[i]][,1])),plot=F)
+    
+    max.y1=max(c(h1$density,d1$y)) ; max.y2=max(c(h2$density,d2$y))
+    
+    par(mfrow=c(2,2))
+    hist(l[[i]][ind,1],probability = T,main=paste(names(l)[i],",",names(coeff)[1]),
+         xlim=c(0, max(c(l[[i]][,1],d1$x))),ylim=c(0,max.y1),xlab="Number of transcripts")
+    lines(d1, lwd=2)
+    
+    hist(l[[i]][-ind,1],probability = T,main=paste(names(l)[i],",","Control"),
+         xlim=c(0, max(c(l[[i]][,1],d2$x))),ylim=c(0,max.y2),xlab="Number of transcripts")
+    lines(d2, lwd=2)
+    
+    plot(d1,lwd=2,main=paste(names(l)[[i]],",","Beta-Poisson"),ylim=c(0,max(c(d1$y,d2$y))),xlim=c(0,max(c(d1$x,d2$x))),
+         xlab="Number of transcripts")
+    lines(d2,col=2,lwd=2)
+    legend("topright",inset=0.03,legend=c(names(coeff)[1],"Control"),box.lty=0, cex=0.7,horiz=T,lwd=2,col=c(1,2))
+    plot(l[[i]][,1], l[[i]][,6],ylim=c(0,1),main=names(l)[i],ylab=paste("Likelihood",names(coeff)[1]),
+         xlab="Observed number of transcripts",pch=20,col="grey",xlim=c(0,max(c(d1$x,d2$x))))
+    abline(h=0.5, lwd=2,col=2)
+  }
+  dev.off()
+}
+
+hist_BP(likelihood_glyco.thresh,coeff_BP_glyco.thresh,"Glyco")
+hist_BP(likelihood_EMT.thresh,coeff_BP_EMT.thresh,"EMT")
+hist_BP(likelihood_DNA_repair.thresh,coeff_BP_DNA_repair.thresh,"DNA_repair")
 
 ### Courbes ROC
 calcul.roc.2=function(l,cond){
@@ -619,7 +722,7 @@ roc_DNA_repair.thresh=calcul.roc.2(likelihood_DNA_repair.thresh,"DNA_repair")
 roc_EMT.thresh=calcul.roc.2(likelihood_EMT.thresh,"EMT")
 
 
-### RÃ©cupÃ©ration des AUC
+### Récupération des AUC
 calcul.auc=function(roc){
   m.auc=matrix(ncol=2,nrow=length(roc))
   rownames(m.auc)=names(roc)
@@ -634,11 +737,11 @@ auc_glyco.thresh=calcul.auc(roc_glyco.thresh)
 auc_DNA_repair.thresh=calcul.auc(roc_DNA_repair.thresh)
 auc_EMT.thresh=calcul.auc(roc_EMT.thresh)
 
-## Combinaison de max 10 gÃ¨nes
+## Combinaison de max 10 gènes
 combinaison=function(liste,nbmax){
   l=list()
   for(i in 2:min(nbmax,length(liste))){
-    l[[c(paste("Combinaison de",i,"gÃ¨nes"))]]=combn(liste,i)
+    l[[c(paste("Combinaison de",i,"gènes"))]]=combn(liste,i)
   }
   return(l)
 }
@@ -669,7 +772,7 @@ n.comb_glyco=m.nom(comb_glyco)
 n.comb_EMT=m.nom(comb_EMT)
 n.comb_DNA_repair=m.nom(comb_DNA_repair)
 
-## Liste organisÃ©e pour faire l'infÃ©rence
+## Liste organisée pour faire l'inférence
 list.mcomb=function(proba,comb,ncomb,cond){
   l=list() ; l1=list() ; l2=list()
   
@@ -741,7 +844,7 @@ dif_expr_BPSC=function(m, l.bp4, cond){
   colnames(matrice_diff)=c(paste(cond,"_Control",sep=""))
   
   for(i in 1:length(res$PVAL)){
-    if((res$PVAL[i]<0.01)==T & is.na(res$PVAL[i])==F){
+    if((res$PVAL[i]<0.05)==T & is.na(res$PVAL[i])==F){
       
       matrice_diff[i,1]=ifelse(mean(m1[i,],na.rm=T)>mean(m2[i,],na.rm=T),1,-1)
       
@@ -769,8 +872,8 @@ gene.dif.DNA_repair.thresh=rownames(diff_DNA_repair[[2]])[which(diff_DNA_repair[
 
 combinaison=function(liste,nbmax){
   l=list()
-  for(i in 2:min(nbmax,length(liste))){
-    l[[c(paste("Combinaison de",i,"gÃ¨nes"))]]=combn(liste,i)
+  for(i in 1:min(nbmax,length(liste))){
+    l[[c(paste("Combinaison de",i,"gènes"))]]=combn(liste,i)
   }
   return(l)
 }
@@ -780,17 +883,26 @@ comb_EMT.2=combinaison(gene.dif.EMT.thresh,10)
 comb_DNA_repair.2=combinaison(gene.dif.DNA_repair.thresh,10)
 
 
+# m.nom=function(comb){
+#   v=list()
+#   for(j in 1:length(comb)){
+#     v[[j]]=matrix(ncol=1,nrow=ncol(comb[[j]]))
+#     for(i in 1:ncol(comb[[j]])){
+#       x=comb[[j]][1,i]
+#       for(k in 2:nrow(comb[[j]])){
+#         x=str_c(x,comb[[j]][k,i],sep=", ")
+#       }
+#       v[[j]][i,]=x
+#     }
+#   }
+#   names(v)=names(comb)
+#   return(v)
+# }
+
 m.nom=function(comb){
   v=list()
   for(j in 1:length(comb)){
-    v[[j]]=matrix(ncol=1,nrow=ncol(comb[[j]]))
-    for(i in 1:ncol(comb[[j]])){
-      x=comb[[j]][1,i]
-      for(k in 2:nrow(comb[[j]])){
-        x=str_c(x,comb[[j]][k,i],sep=", ")
-      }
-      v[[j]][i,]=x
-    }
+    v[[j]]=matrix(apply(comb[[j]],2, paste, collapse=", "), ncol=1,nrow=ncol(comb[[j]]))
   }
   names(v)=names(comb)
   return(v)
@@ -814,9 +926,11 @@ list.mcomb=function(proba,comb,ncomb,cond){
       l1[[i]][[j]]=as.matrix(c(proba[[n.gene[1]]][,6]))
       l2[[i]][[j]]=as.matrix(c(proba[[n.gene[1]]][,7]))
       
-      for(z in 2:length(n.gene)){
-        l1[[i]][[j]]=cbind(l1[[i]][[j]],c(proba[[n.gene[z]]][,6]))
-        l2[[i]][[j]]=cbind(l2[[i]][[j]],c(proba[[n.gene[z]]][,7]))
+      if (length(n.gene) > 1) {
+        for(z in 2:length(n.gene)){
+          l1[[i]][[j]]=cbind(l1[[i]][[j]],c(proba[[n.gene[z]]][,6]))
+          l2[[i]][[j]]=cbind(l2[[i]][[j]],c(proba[[n.gene[z]]][,7]))
+        }
       }
       colnames(l1[[i]][[j]])=c(n.gene) ; colnames(l2[[i]][[j]])=c(n.gene)
       
@@ -868,12 +982,12 @@ coeff_glm=function(lmcomb,cond){
       for(k in 1:nrow(x1)){
         glm1[[i]][[j]][[k]]=list() ;  glm2[[i]][[j]][[k]]=list()
         
-        y1=x1[-k, ]
+        y1=x1[-k, ,drop=F]
         glm1[[i]][[j]][[k]]=glm(resp1[-k]~.,family="binomial",data=y1)
         m1[[i]][[j]][k,]=c(glm1[[i]][[j]][[k]]$coefficients)
         
         
-        y2=x2[-k, ]
+        y2=x2[-k, ,drop=F]
         glm2[[i]][[j]][[k]]=glm(resp2[-k]~.,family="binomial",data=y2)
         m2[[i]][[j]][k,]=c(glm2[[i]][[j]][[k]]$coefficients)
       }
@@ -895,7 +1009,7 @@ coeff_glm=function(lmcomb,cond){
   names(l.glm)=names(lmcomb)
   
   v=list(coeff,l.glm)
-  names(v)=c("Coefficient","ModÃ¨le")
+  names(v)=c("Coefficient","Modèle")
   return(v)
 }
 
@@ -916,9 +1030,9 @@ p.logit=function(proba,model){
       logit2[[i]][[j]]=vector("numeric",nrow(l2[[i]][[j]]))
       
       for(k in 1:nrow(l1[[i]][[j]])){
-        x=as.data.frame(t(l1[[i]][[j]][k,]))
-        y=as.data.frame(t(l2[[i]][[j]][k,]))
-        
+        x=as.data.frame(l1[[i]][[j]][k,,drop=F])
+        y=as.data.frame(l2[[i]][[j]][k,,drop=F])
+
         logit1[[i]][[j]][k]=predict(model[[1]][[i]][[j]][[k]],x)
         logit2[[i]][[j]][k]=predict(model[[2]][[i]][[j]][[k]],y)
       }
@@ -1033,7 +1147,7 @@ roc_glm_DNA_repair.thresh.2=roc.glm(proba.DNA_repair.glm.thresh.2,"DNA_repair")
 
 
 
-### RÃ©cupÃ©ration des aires sous la courbe : AUC
+### Récupération des aires sous la courbe : AUC
 calcul.auc.1=function(roc){
   l=list()
   roc1=roc[[1]] ; roc2=roc[[2]]
@@ -1062,28 +1176,28 @@ auc_glm_EMT.thresh.2=calcul.auc.1(roc_glm_EMT.thresh.2)
 auc_glm_DNA_repair.thresh.2=calcul.auc.1(roc_glm_DNA_repair.thresh.2)
 
 
-ALL_auc_glm_glyco.thresh.2=rbind(auc_glyco.thresh[which(diff_glyco[[2]]!=0),],
-                                 auc_glm_glyco.thresh.2)
-ALL_auc_glm_EMT.thresh.2=rbind(auc_EMT.thresh[which(diff_EMT[[2]]!=0),],
-                               auc_glm_EMT.thresh.2)
-ALL_auc_glm_DNA_repair.thresh.2=rbind(auc_DNA_repair.thresh[which(diff_DNA_repair[[2]]!=0),],
-                                      auc_glm_DNA_repair.thresh.2)
+ALL_auc_glm_glyco.thresh.2=#rbind(auc_glyco.thresh[which(diff_glyco[[2]]!=0),],
+                                 auc_glm_glyco.thresh.2#)
+ALL_auc_glm_EMT.thresh.2=#rbind(auc_EMT.thresh[which(diff_EMT[[2]]!=0),],
+                               auc_glm_EMT.thresh.2#)
+ALL_auc_glm_DNA_repair.thresh.2=#rbind(auc_DNA_repair.thresh[which(diff_DNA_repair[[2]]!=0),],
+                                      auc_glm_DNA_repair.thresh.2#)
 
 
-vrep.glyco.thresh.2=c(rep(1,4),rep(2,6),rep(3,4),rep(4,1))
-vrep.EMT.thresh.2=c(rep(1,3),rep(2,3),rep(3,1))
-vrep.DNA_repair.thresh.2=c(rep(1,3),rep(2,3),rep(3,1))
+vrep.glyco.thresh.2=unlist(lapply(rownames(ALL_auc_glm_glyco.thresh.2), function(str){length(unlist(strsplit(str,",")))}))
+vrep.EMT.thresh.2=unlist(lapply(rownames(ALL_auc_glm_EMT.thresh.2), function(str){length(unlist(strsplit(str,",")))}))
+vrep.DNA_repair.thresh.2=unlist(lapply(rownames(ALL_auc_glm_DNA_repair.thresh.2), function(str){length(unlist(strsplit(str,",")))}))
 
-## Evolution AUC en fonction du nombre de gÃ¨nes
+## Evolution AUC en fonction du nombre de gènes
 library(beeswarm)
 evolution.auc=function(auc,vrep,chaine,cond,ind,ind2){
   pdf(paste("Evolution_AUC_",cond,"_",chaine,".pdf",sep=""))
   par(mar=c(4.1,5.1,5,4.1),xpd=T)
   x=cbind(auc[,1],vrep)
   colnames(x)=c("X1","X2")
-  boxplot(X1~X2, data=x,xlab="Combinaison de i gÃ¨nes",ylab="AUC",
+  boxplot(X1~X2, data=x,xlab="Combinaison de i gènes",ylab="AUC",
           ylim=c(min(x[,1],na.rm=T),max(x[,1],na.rm=T)),
-          main="Evolution des AUC en fonction du nombre de gÃ¨nes",outline=F,
+          main="Evolution des AUC en fonction du nombre de gènes",outline=F,
           col=rainbow(10,alpha=0.3))
   beeswarm(X1~X2,add=T, col=rainbow(9), pch=20, corral="wrap",data=x)
   
@@ -1091,18 +1205,17 @@ evolution.auc=function(auc,vrep,chaine,cond,ind,ind2){
   dev.off()
 }
 
-evolution.auc(ALL_auc_glm_glyco.thresh.2,vrep.glyco.thresh.2,"RÃ©gression logistique","Glycolysis",2.5,0.02)
-evolution.auc(ALL_auc_glm_EMT.thresh.2,vrep.EMT.thresh.2,"RÃ©gression logistique","EMT",2,0.01)
-evolution.auc(ALL_auc_glm_DNA_repair.thresh.2,vrep.DNA_repair.thresh.2,"RÃ©gression logistique","DNA_repair",2,0.005)
+evolution.auc(ALL_auc_glm_glyco.thresh.2,vrep.glyco.thresh.2,"Régression logistique","Glycolysis",2.5,0.02)
+evolution.auc(ALL_auc_glm_EMT.thresh.2,vrep.EMT.thresh.2,"Régression logistique","EMT",2,0.01)
+evolution.auc(ALL_auc_glm_DNA_repair.thresh.2,vrep.DNA_repair.thresh.2,"Régression logistique","DNA_repair",2,0.005)
 
 
 
-### PrÃ©dictions
+### Prédictions
 
 m_AUC_glm_glyco.thresh=cbind(ALL_auc_glm_glyco.thresh.2[,1],vrep.glyco.thresh.2)
 m_AUC_glm_EMT.thresh=cbind(ALL_auc_glm_EMT.thresh.2[,1],vrep.EMT.thresh.2)
 m_AUC_glm_DNA_repair.thresh=cbind(ALL_auc_glm_DNA_repair.thresh.2[,1],vrep.DNA_repair.thresh.2)
-
 
 
 find.AUCmax=function(m,x){
@@ -1111,25 +1224,28 @@ find.AUCmax=function(m,x){
   return(v[which(v==max(v))])
 }
 
-#combMAX1_glyco.thresh=find.AUCmax(m_AUC_glm_glyco.thresh,1)
-combMAX2_glyco.thresh=find.AUCmax(m_AUC_glm_glyco.thresh,2)
-combMAX3_glyco.thresh=find.AUCmax(m_AUC_glm_glyco.thresh,3)
-combMAX4_glyco.thresh=m_AUC_glm_glyco.thresh[15,1]
-names(combMAX4_glyco.thresh)=rownames(m_AUC_glm_glyco.thresh)[15]
+combMAX1_glyco.thresh=find.AUCmax(m_AUC_glm_glyco.thresh,1)[1]
+combMAX2_glyco.thresh=find.AUCmax(m_AUC_glm_glyco.thresh,2)[1]
+combMAX3_glyco.thresh=find.AUCmax(m_AUC_glm_glyco.thresh,3)[1]
+combMAX4_glyco.thresh=find.AUCmax(m_AUC_glm_glyco.thresh,4)[1]
+combMAX5_glyco.thresh=find.AUCmax(m_AUC_glm_glyco.thresh,5)[1]
+combMAX6_glyco.thresh=find.AUCmax(m_AUC_glm_glyco.thresh,6)[1]
+names(combMAX6_glyco.thresh)=rownames(m_AUC_glm_glyco.thresh)[nrow(m_AUC_glm_glyco.thresh)]
 
-combMAX1_EMT.thresh=find.AUCmax(m_AUC_glm_EMT.thresh,2)
-combMAX2_EMT.thresh=find.AUCmax(m_AUC_glm_EMT.thresh,2)
-combMAX3_EMT.thresh=find.AUCmax(m_AUC_glm_EMT.thresh,3)
-names(combMAX3_EMT.thresh)=rownames(m_AUC_glm_EMT.thresh)[7]
+combMAX1_EMT.thresh=find.AUCmax(m_AUC_glm_EMT.thresh,1)[1]
+combMAX2_EMT.thresh=find.AUCmax(m_AUC_glm_EMT.thresh,2)[1]
+##combMAX3_EMT.thresh=find.AUCmax(m_AUC_glm_EMT.thresh,3)
+names(combMAX2_EMT.thresh)=rownames(m_AUC_glm_EMT.thresh)[nrow(m_AUC_glm_EMT.thresh)]
 
-combMAX2_DNA_repair.thresh=find.AUCmax(m_AUC_glm_DNA_repair.thresh,2)
-combMAX3_DNA_repair.thresh=find.AUCmax(m_AUC_glm_DNA_repair.thresh,3)
-names(combMAX3_DNA_repair.thresh)=rownames(m_AUC_glm_DNA_repair.thresh)[7]
+combMAX1_DNA_repair.thresh=find.AUCmax(m_AUC_glm_DNA_repair.thresh,1)[1]
+combMAX2_DNA_repair.thresh=find.AUCmax(m_AUC_glm_DNA_repair.thresh,2)[1]
+##combMAX3_DNA_repair.thresh=find.AUCmax(m_AUC_glm_DNA_repair.thresh,3)
+names(combMAX2_DNA_repair.thresh)=rownames(m_AUC_glm_DNA_repair.thresh)[nrow(m_AUC_glm_DNA_repair.thresh)]
 
 
 return_proba=function(proba,comb,x){
-  ind=grep(names(comb),colnames(proba[[1]][[x-1]]))
-  return(proba[[1]][[x-1]][,ind])
+  ind=grep(names(comb),colnames(proba[[1]][[x]]))
+  return(proba[[1]][[x]][,ind])
 }
 
 ## Avec plusieurs AUC max
@@ -1148,23 +1264,43 @@ return_proba_2=function(proba,comb,x){
 p_glm2_glyco.thresh=return_proba(proba.glyco.glm.thresh.2,combMAX2_glyco.thresh,2)
 p_glm3_glyco.thresh=return_proba(proba.glyco.glm.thresh.2,combMAX3_glyco.thresh,3)
 p_glm4_glyco.thresh=return_proba(proba.glyco.glm.thresh.2,combMAX4_glyco.thresh,4)
+p_glm5_glyco.thresh=return_proba(proba.glyco.glm.thresh.2,combMAX5_glyco.thresh,5)
+p_glm6_glyco.thresh=return_proba(proba.glyco.glm.thresh.2,combMAX6_glyco.thresh,6)
 
-p_glm2_EMT.thresh=return_proba_2(proba.EMT.glm.thresh.2,combMAX2_EMT.thresh,2)
-p_glm3_EMT.thresh=return_proba(proba.EMT.glm.thresh.2,combMAX3_EMT.thresh,3)
+p_glm2_EMT.thresh=return_proba(proba.EMT.glm.thresh.2,combMAX2_EMT.thresh,2)
+#p_glm3_EMT.thresh=return_proba(proba.EMT.glm.thresh.2,combMAX3_EMT.thresh,3)
 
 p_glm2_DNA_repair.thresh=return_proba(proba.DNA_repair.glm.thresh.2,combMAX2_DNA_repair.thresh,2)
-p_glm3_DNA_repair.thresh=return_proba(proba.DNA_repair.glm.thresh.2,combMAX3_DNA_repair.thresh,3)
+##p_glm3_DNA_repair.thresh=return_proba(proba.DNA_repair.glm.thresh.2,combMAX3_DNA_repair.thresh,3)
 
 
-l_pred_glyco.thresh=list(p_glm2_glyco.thresh,p_glm3_glyco.thresh,p_glm4_glyco.thresh)
-names(l_pred_glyco.thresh)=c(names(combMAX2_glyco.thresh),names(combMAX3_glyco.thresh),
-                             names(combMAX4_glyco.thresh))
+all_pred_glyco = list()
+for (i in 1:length(proba.glyco.glm.thresh.2[[1]])) {
+  for (j in colnames(proba.glyco.glm.thresh.2[[1]][[i]])) {
+        all_pred_glyco[[j]] = proba.glyco.glm.thresh.2[[1]][[i]][,j]
+  }
+}
+l_pred_glyco.thresh=list(p_glm2_glyco.thresh, p_glm3_glyco.thresh, p_glm4_glyco.thresh, p_glm5_glyco.thresh, p_glm6_glyco.thresh)
+names(l_pred_glyco.thresh)=c(names(combMAX2_glyco.thresh), names(combMAX3_glyco.thresh), names(combMAX4_glyco.thresh),
+                             names(combMAX5_glyco.thresh), names(combMAX6_glyco.thresh))
 
-l_pred_EMT.thresh=list(p_glm2_EMT.thresh[[1]],p_glm2_EMT.thresh[[2]],p_glm3_EMT.thresh)
-names(l_pred_EMT.thresh)=c(names(combMAX2_EMT.thresh),names(combMAX3_EMT.thresh))
+all_pred_EMT = list()
+for (i in 1:length(proba.EMT.glm.thresh.2[[1]])) {
+  for (j in colnames(proba.EMT.glm.thresh.2[[1]][[i]])) {
+    all_pred_EMT[[j]] = proba.EMT.glm.thresh.2[[1]][[i]][,j]
+  }
+}
+l_pred_EMT.thresh=list(p_glm2_EMT.thresh)
+names(l_pred_EMT.thresh)=c(names(combMAX2_EMT.thresh))
 
-l_pred_DNA_repair.thresh=list(p_glm2_DNA_repair.thresh,p_glm3_DNA_repair.thresh)
-names(l_pred_DNA_repair.thresh)=c(names(combMAX2_DNA_repair.thresh),names(combMAX3_DNA_repair.thresh))
+all_pred_DNA_repair = list()
+for (i in 1:length(proba.DNA_repair.glm.thresh.2[[1]])) {
+  for (j in colnames(proba.DNA_repair.glm.thresh.2[[1]][[i]])) {
+    all_pred_DNA_repair[[j]] = proba.DNA_repair.glm.thresh.2[[1]][[i]][,j]
+  }
+}
+l_pred_DNA_repair.thresh=list(p_glm2_DNA_repair.thresh)
+names(l_pred_DNA_repair.thresh)=c(names(combMAX2_DNA_repair.thresh))
 
 
 
@@ -1172,7 +1308,7 @@ plot_prediction=function(l,cond, title=NULL, log=T){
   if (is.null(title))
     title=paste("prediction_glm_", cond,"_log10.pdf",sep="")
   pdf(title)
-  par(cex.axis=0.6,font.axis=2,mar=c(5,5,5,5),mfrow=c(3,1))
+  par(cex.axis=0.6,font.axis=2,mar=c(5,5,1,5),mfrow=c(5,1))
   
   for(i in 1:length(l)){
     m <- l[[i]]
@@ -1184,21 +1320,22 @@ plot_prediction=function(l,cond, title=NULL, log=T){
   dev.off()
 }
 
-plot_prediction(l_pred_glyco.thresh,"Glycolysis")
-plot_prediction(l_pred_EMT.thresh,"EMT")
-plot_prediction(l_pred_DNA_repair.thresh,"DNA_repair")
+plot_prediction(all_pred_glyco,"Glycolysis")
+plot_prediction(all_pred_EMT,"EMT")
+plot_prediction(all_pred_DNA_repair,"DNA_repair")
 
-l_pred_EMT.all=list(p_glm2_EMT.thresh,p_glm2_EMT.thresh,p_glm3_EMT.thresh)
-plot_prediction(l_pred_EMT.thresh,"EMT", "prediction_glm_EMT_all_log10.pdf", log=T)
+plot_prediction(all_pred_glyco,"Glycolysis", "prediction_glm_Glycolysis_nolog.pdf", log=F)
+plot_prediction(all_pred_EMT,"EMT", "prediction_glm_EMT_nolog.pdf", log=F)
+plot_prediction(all_pred_DNA_repair,"DNA_repair", "prediction_glm_DNA_repair_nolog.pdf", log=F)
 
-### SensibilitÃ© et spÃ©cificitÃ©
+### Sensibilité et spécificité
 calcul_sensi_speci=function(l,seuil,cond){
   ind=grep(cond,names(l[[1]]))
   n1=length(ind)
   n2=length(l[[1]])-n1
   
   tab=matrix(ncol=2,nrow=length(l))
-  colnames(tab)=c("SensibilitÃ©","SpÃ©cificitÃ©")
+  colnames(tab)=c("Sensibilité","Spécificité")
   rownames(tab)=names(l)
   
   mat=list()
@@ -1230,22 +1367,22 @@ calcul_sensi_speci=function(l,seuil,cond){
   names(mat)=names(l)
   
   y=list(mat,tab)
-  names(y)=c("Tableau","SensibilitÃ©-SpÃ©cificitÃ©")
+  names(y)=c("Tableau","Sensibilité-Spécificité")
   return(y)
   
 }
 
-glyco.ss = calcul_sensi_speci(l_pred_glyco.thresh,0.1,"Glyco")[["SensibilitÃ©-SpÃ©cificitÃ©"]]
+glyco.ss = calcul_sensi_speci(all_pred_glyco,0.1,"Glyco")[["Sensibilité-Spécificité"]]
 glyco.final = cbind(m_AUC_glm_glyco.thresh[rownames(glyco.ss),1,drop=F], glyco.ss)
 colnames(glyco.final)[1]="AUC"
 write.table(glyco.final, file="glycolysis_AUC_sens_spec.txt", sep="\t", quote=F, col.names=NA)
 
-EMT.ss = calcul_sensi_speci(l_pred_EMT.thresh,0.1,"EMT")[["SensibilitÃ©-SpÃ©cificitÃ©"]]
+EMT.ss = calcul_sensi_speci(all_pred_EMT,0.1,"EMT")[["Sensibilité-Spécificité"]]
 EMT.final = cbind(m_AUC_glm_EMT.thresh[rownames(EMT.ss),1,drop=F], EMT.ss)
 colnames(EMT.final)[1]="AUC"
 write.table(EMT.final, file="EMT_AUC_sens_spec.txt", sep="\t", quote=F, col.names=NA)
 
-DNArepair.ss = calcul_sensi_speci(l_pred_DNA_repair.thresh,0.1,"DNA_repair")[["SensibilitÃ©-SpÃ©cificitÃ©"]]
+DNArepair.ss = calcul_sensi_speci(all_pred_DNA_repair,0.1,"DNA_repair")[["Sensibilité-Spécificité"]]
 DNArepair.final = cbind(m_AUC_glm_DNA_repair.thresh[rownames(DNArepair.ss),1,drop=F], DNArepair.ss)
 colnames(DNArepair.final)[1]="AUC"
 write.table(DNArepair.final, file="DNArepair_AUC_sens_spec.txt", sep="\t", quote=F, col.names=NA)

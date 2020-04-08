@@ -237,3 +237,66 @@ tmp = seq(-1*(max(abs(pcamat))), max(abs(pcamat)), max(abs(pcamat))/50)
 image(data.matrix(seq(min(pcamat), max(pcamat), .01)), col=bluered(100), axes=F)
 axis(1, at=(seq(-2, 2, 1)-(-max(abs(pcamat)))) / (2*max(abs(pcamat))), label=seq(-2, 2, 1))
 dev.off()
+
+dcats <- c("Fibroblast", "Bcell", "Tcell", "Macrophage", "NK", "Endothelial", "Malignant", "NA")
+##dcats2 <- c("Fibroblast", "Bcell", "Tcell", "Macrophage", "NK", "Endothelial")
+overall <- represMat[,grep("Overall", colnames(represMat))]
+colnames(overall) <- gsub("_Overall", "", colnames(overall))
+overClass <- lapply(cats, function(g) {
+  gidx <- which(celltype[colnames(pcamat)] == g)
+  unlist(lapply(gidx, function(i) {
+    p <- pcamat[threshidx,i]
+    ovdist <- apply(overall, 2, function(x, p) {dist(rbind(p,x), method="euclidean")}, p=p)
+    colnames(overall)[ovdist==min(ovdist)]
+  }))
+})
+names(overClass) = dcats
+over.pies <- lapply(overClass, function(v) {
+  unlist(lapply(dcats, function(g){length(which(v == g))}))
+})
+correctOvClass <- unlist(lapply(dcats, function(g){length(which(overClass[[g]] == g)) / length(overClass[[g]])}))
+names(correctOvClass) <- dcats
+
+pdf(sprintf("plots/tirosh_m_supervised_reclass_by_activity_profiles_%.1f.pdf", thresh))
+par(mar=c(7,4,1,1))
+barplot(matrix(unlist(over.pies), nc=length(dcats), byrow=F), col=rainbow11, ylab="Samples", las=2,
+        names.arg=unlist(lapply(dcats, function(g){sprintf("%s\n(%.1f%% correct)", g, correctOvClass[g]*100)})))
+legend("topleft", fill=rainbow11[1:length(dcats)], legend=dcats, cex=0.75, bty="n", horiz=F)
+dev.off()
+
+## PvClust
+library(pvclust)
+tummat <- pcamat[,celltype=="Malignant"]
+pvc <- pvclust(tummat, method.dist="euclidean", method.hclust="ward.D", nboot=500, parallel=as.integer(8))
+save(pvc, file="tirosh_m_malign_pvclust.RData")
+pvclusters=pvpick(pvc)
+
+origsize <- unlist(lapply(pvclusters$clusters, length))
+clustmin <- 5
+bigclust <- pvclusters$clusters[origsize >= clustmin]
+
+library(gplots)
+clsize <- unlist(lapply(bigclust, length))
+clustcells <- unlist(bigclust)
+clustcellso <- intersect(colnames(tummat)[pvc$hclust$order], clustcells)
+clustid <- rep(1:length(bigclust), clsize)
+names(clustid) <- unlist(bigclust)
+clusto <- clustid[clustcellso]
+clcol <- 1:length(clsize)%%2
+
+## for (thresh in c(0, 1, 2, 3, 5)) {
+##
+threshidx <- which(eigen[,"variance.percent"] > thresh)
+pc.hc <- hclust(dist(tummat[threshidx,]))
+layMat <- matrix(rep(1:3, c(1,length(threshidx),nrow(score))))
+
+pdf(sprintf("plots/tirosh_m_signif_cluster_profiles_min%d_%1.f.pdf", clustmin, thresh))
+layout(layMat)
+par(mar=c(0,15,0.25,0.5))
+image(matrix(rep(clcol,clsize[unique(clusto)]), ncol=1), col=c("black", "grey"), axes=F)
+image(t(tummat[threshidx[pc.hc$order],clustcellso]), col=bluered(100), axes=F)
+axis(2, at=seq(0,1, 1/(length(threshidx)-1)), label=paste("PC", 1:length(threshidx))[pc.hc$order], cex=1, las=2)
+par(mar=c(1,15,0.25,0.5))
+image(t(normscore[act.hc$order,clustcellso]), col=bluered(100), axes=F)
+axis(2, at=seq(0,1, 1/(nrow(score)-1)), label=rownames(score)[act.hc$order], cex=1, las=2)
+dev.off()

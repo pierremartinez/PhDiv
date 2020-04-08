@@ -134,3 +134,44 @@ beanplot(list(Malignant=unlist(distList[["Malignant"]]),
               Inter=unlist(distList[["Inter"]])),
          col=greys8[c(5,1,3,8)], cut=.1, what=c(1,1,1,0), ylab="Distance", log="")
 dev.off()
+
+## PvClust
+tummat <- pcamat[,celltype[cellid]=="Malignant"]
+tumact <- score[,celltype=="Malignant"]
+dact <- dist(tumact)
+act.hc <- hclust(dact)
+
+library(pvclust)
+pvc <- pvclust(tummat, method.dist="euclidean", method.hclust="ward.D", nboot=500, parallel=as.integer(8))
+save(pvc, file="venteicher_malign_pvclust.RData")
+pvclusters=pvpick(pvc)
+
+origsize <- unlist(lapply(pvclusters$clusters, length))
+clustmin <- 0
+bigclust <- pvclusters$clusters[origsize >= clustmin]
+
+library(gplots)
+clsize <- unlist(lapply(bigclust, length))
+clustcells <- unlist(bigclust)
+clustcellso <- intersect(colnames(tummat)[pvc$hclust$order], clustcells)
+clustid <- rep(1:length(bigclust), clsize)
+names(clustid) <- unlist(bigclust)
+clusto <- clustid[clustcellso]
+clcol <- 1:length(clsize)%%2
+
+## for (thresh in c(0, 1, 2, 3, 5)) {
+##
+threshidx <- which(eigen[,"variance.percent"] > thresh)
+pc.hc <- hclust(dist(tummat[threshidx,]))
+layMat <- matrix(rep(1:3, c(1,length(threshidx),nrow(score))))
+
+pdf(sprintf("plots/venteicher_signif_cluster_profiles_min%d_%1.f.pdf", clustmin, thresh))
+layout(layMat)
+par(mar=c(0,15,0.25,0.5))
+image(matrix(rep(clcol,clsize[unique(clusto)]), ncol=1), col=c("black", "grey"), axes=F)
+image(t(tummat[threshidx[pc.hc$order],clustcellso]), col=bluered(100), axes=F)
+axis(2, at=seq(0,1, 1/(length(threshidx)-1)), label=paste("PC", 1:length(threshidx))[pc.hc$order], cex=1, las=2)
+par(mar=c(1,15,0.25,0.5))
+image(t(normscore[act.hc$order,clustcellso]), col=bluered(100), axes=F)
+axis(2, at=seq(0,1, 1/(nrow(score)-1)), label=rownames(score)[act.hc$order], cex=1, las=2)
+dev.off()
